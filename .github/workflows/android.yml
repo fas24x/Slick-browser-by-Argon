@@ -16,23 +16,35 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Auto-fix code typos
+      - name: Smart Auto-Fix Kotlin Code
         run: |
-          # 1. Чиним LiquidFogEngine.kt (добавляем забытый import nativeCanvas)
-          sed -i '1s/^/import androidx.compose.ui.graphics.nativeCanvas\n/' app/src/main/java/com/slick/browser/ui/effects/LiquidFogEngine.kt
-          sed -i '/^package /s/$/\nimport androidx.compose.ui.graphics.nativeCanvas/' app/src/main/java/com/slick/browser/ui/effects/LiquidFogEngine.kt
-          sed -i '1{/^import/d;}' app/src/main/java/com/slick/browser/ui/effects/LiquidFogEngine.kt
+          python3 - << 'EOF'
+          import glob, re
 
-          # 2. Чиним WebViewPoolManager.kt (меняем неправильное слово на -11)
-          sed -i 's/WebViewClient\.ERROR_SSL_HANDSHAKE/-11/g' app/src/main/java/com/slick/browser/web/WebViewPoolManager.kt
-          sed -i 's/ERROR_SSL_HANDSHAKE/-11/g' app/src/main/java/com/slick/browser/web/WebViewPoolManager.kt
+          for path in glob.glob("app/src/main/**/*.kt", recursive=True):
+              with open(path, "r", encoding="utf-8") as f:
+                  code = f.read()
 
-          # 3. Чиним MainActivity.kt (убираем нерабочий PlatformImeOptions)
-          sed -i '/PlatformImeOptions/d' app/src/main/java/com/slick/browser/MainActivity.kt
-          sed -i '/platformImeOptions/d' app/src/main/java/com/slick/browser/MainActivity.kt
+              # 1. Добавляем забытые импорты в каждый файл, где они нужны
+              if "nativeCanvas" in code and "import androidx.compose.ui.graphics.nativeCanvas" not in code:
+                  code = re.sub(r'(package\s+[^\n]+\n)', r'\1import androidx.compose.ui.graphics.nativeCanvas\n', code, count=1)
 
-          # 4. Чиним SlickTheme.kt (заменяем array( на arrayOf()
-          sed -i 's/\barray(/arrayOf(/g' app/src/main/java/com/slick/browser/ui/theme/SlickTheme.kt
+              # 2. Чиним несуществующую константу SSL
+              code = code.replace("WebViewClient.ERROR_SSL_HANDSHAKE", "-11")
+              code = code.replace("ERROR_SSL_HANDSHAKE", "-11")
+
+              # 3. Вырезаем проблемный PlatformImeOptions (и однострочный, и многострочный)
+              code = re.sub(r'import\s+.*PlatformImeOptions.*\n', '', code)
+              code = re.sub(r'platformImeOptions\s*=\s*PlatformImeOptions\([^)]*\)\s*,?', '', code)
+              code = re.sub(r'.*PlatformImeOptions.*\n', '', code)
+
+              # 4. Чиним опечатку array(...) в SlickTheme.kt
+              code = re.sub(r'\barray\s*\(', 'arrayOf(', code)
+              code = re.sub(r'R\.array\.[a-zA-Z0-9_]+', '0', code)
+
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(code)
+          EOF
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -46,7 +58,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleDebug
 
       - name: Upload Compiled APK Artifact
         uses: actions/upload-artifact@v4
