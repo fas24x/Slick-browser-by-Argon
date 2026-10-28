@@ -25,23 +25,40 @@ jobs:
               with open(path, "r", encoding="utf-8") as f:
                   code = f.read()
 
-              # 1. Добавляем забытый импорт nativeCanvas
+              # 1. Чиним LiquidFogEngine.kt (добавляем import nativeCanvas)
               if "nativeCanvas" in code and "import androidx.compose.ui.graphics.nativeCanvas" not in code:
                   code = re.sub(r'(package\s+[^\n]+\n)', r'\1import androidx.compose.ui.graphics.nativeCanvas\n', code, count=1)
 
-              # 2. Чиним несуществующую константу SSL
+              # 2. Чиним WebViewPoolManager.kt (меняем константу SSL на -11)
               code = code.replace("WebViewClient.ERROR_SSL_HANDSHAKE", "-11")
               code = code.replace("ERROR_SSL_HANDSHAKE", "-11")
 
-              # 3. Чиним platformImeOptions (заменяем любой вызов со скобками на null)
-              code = re.sub(r'import\s+.*PlatformImeOptions.*\n', '', code)
-              code = re.sub(r'platformImeOptions\s*=\s*PlatformImeOptions\s*\([^)]*\)\s*(\{[^}]*\})?', 'platformImeOptions = null', code, flags=re.DOTALL)
-              code = re.sub(r'platformImeOptions\s*=\s*\{[^}]*\}', 'platformImeOptions = null', code, flags=re.DOTALL)
-              code = re.sub(r'platformImeOptions\s*=\s*[A-Za-z0-9_.]+\s*(\([^)]*\))?\s*(\{[^}]*\})?', 'platformImeOptions = null', code, flags=re.DOTALL)
-
-              # 4. Чиним опечатку array(...) в SlickTheme.kt
+              # 3. Чиним SlickTheme.kt (меняем array( на arrayOf()
               code = re.sub(r'\barray\s*\(', 'arrayOf(', code)
               code = re.sub(r'R\.array\.[a-zA-Z0-9_]+', '0', code)
+
+              # 4. Чиним MainActivity.kt без ломания скобок!
+              if "MainActivity.kt" in path:
+                  # Убираем нерабочий импорт на 38 строке
+                  code = re.sub(r'import\s+.*PlatformImeOptions.*\n', '', code)
+                  # Убираем сломанную строчку ~854 в конце файла, если она там есть
+                  code = re.sub(r'^.*PlatformImeOptions.*$', lambda m: '' if 'platformImeOptions' not in m.group(0) else m.group(0), code, flags=re.MULTILINE)
+                  # Заменяем вызов platformImeOptions = ... целиком до конца строки на null, сохраняя запятую или скобку
+                  lines = code.splitlines()
+                  new_lines = []
+                  for line in lines:
+                      if "platformImeOptions" in line and "=" in line:
+                          # Проверяем, закрывается ли на этой строке весь KeyboardOptions
+                          stripped = line.rstrip()
+                          if stripped.endswith("),"):
+                              new_lines.append("platformImeOptions = null),")
+                          elif stripped.endswith(","):
+                              new_lines.append("platformImeOptions = null,")
+                          else:
+                              new_lines.append("platformImeOptions = null")
+                      else:
+                          new_lines.append(line)
+                  code = "\n".join(new_lines)
 
               with open(path, "w", encoding="utf-8") as f:
                   f.write(code)
