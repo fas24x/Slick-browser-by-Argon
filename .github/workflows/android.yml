@@ -2,18 +2,12 @@ name: Slick Browser APK Build
 
 on:
   push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -24,24 +18,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
-
-      - name: Rename APK for Artifact
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk slick-browser-v2.apk
+        run: gradle assembleDebug
 
       - name: Upload Compiled APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: slick-browser-apk
-          path: slick-browser-v2.apk
-          if-no-files-found: error
+          name: Slick-Browser-APK
+          path: "**/*.apk"
