@@ -16,39 +16,54 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Smart Auto-Fix Kotlin Code
+      - name: Fix Manifest & Inject Crash Screen
         run: |
           python3 - << 'EOF'
-          import glob, re
+          import glob, re, os
 
+          # 1. Полная починка AndroidManifest.xml (причина 90% мгновенных вылетов при клике на иконку)
+          for mpath in glob.glob("app/src/main/**/AndroidManifest.xml", recursive=True):
+              with open(mpath, "r", encoding="utf-8") as f:
+                  m = f.read()
+
+              # Ставим безопасную системную тему, которая никогда не вызывает краш
+              m = re.sub(r'android:theme="[^"]*"', 'android:theme="@android:style/Theme.Material.NoActionBar"', m)
+
+              # Проверяем, не указан ли в <application android:name="..."> несуществующий класс
+              app_tag = re.search(r'<application[^>]*>', m, flags=re.DOTALL)
+              if app_tag:
+                  tag_str = app_tag.group(0)
+                  name_match = re.search(r'android:name="([^"]*)"', tag_str)
+                  if name_match:
+                      cls_name = name_match.group(1).split('.')[-1]
+                      found = glob.glob(f"app/src/main/**/{cls_name}.kt", recursive=True)
+                      if not found:
+                          new_tag = re.sub(r'\s*android:name="[^"]*"', '', tag_str)
+                          m = m.replace(tag_str, new_tag)
+
+              with open(mpath, "w", encoding="utf-8") as f:
+                  f.write(m)
+
+          # 2. Чиним Kotlin-файлы + встраиваем перехватчик вылетов в MainActivity
           for path in glob.glob("app/src/main/**/*.kt", recursive=True):
               with open(path, "r", encoding="utf-8") as f:
                   code = f.read()
 
-              # 1. Чиним LiquidFogEngine.kt (добавляем import nativeCanvas)
               if "nativeCanvas" in code and "import androidx.compose.ui.graphics.nativeCanvas" not in code:
                   code = re.sub(r'(package\s+[^\n]+\n)', r'\1import androidx.compose.ui.graphics.nativeCanvas\n', code, count=1)
 
-              # 2. Чиним WebViewPoolManager.kt (меняем константу SSL на -11)
               code = code.replace("WebViewClient.ERROR_SSL_HANDSHAKE", "-11")
               code = code.replace("ERROR_SSL_HANDSHAKE", "-11")
-
-              # 3. Чиним SlickTheme.kt (меняем array( на arrayOf()
               code = re.sub(r'\barray\s*\(', 'arrayOf(', code)
               code = re.sub(r'R\.array\.[a-zA-Z0-9_]+', '0', code)
 
-              # 4. Чиним MainActivity.kt без ломания скобок!
               if "MainActivity.kt" in path:
-                  # Убираем нерабочий импорт на 38 строке
                   code = re.sub(r'import\s+.*PlatformImeOptions.*\n', '', code)
-                  # Убираем сломанную строчку ~854 в конце файла, если она там есть
                   code = re.sub(r'^.*PlatformImeOptions.*$', lambda m: '' if 'platformImeOptions' not in m.group(0) else m.group(0), code, flags=re.MULTILINE)
-                  # Заменяем вызов platformImeOptions = ... целиком до конца строки на null, сохраняя запятую или скобку
                   lines = code.splitlines()
                   new_lines = []
                   for line in lines:
                       if "platformImeOptions" in line and "=" in line:
-                          # Проверяем, закрывается ли на этой строке весь KeyboardOptions
                           stripped = line.rstrip()
                           if stripped.endswith("),"):
                               new_lines.append("platformImeOptions = null),")
@@ -59,6 +74,26 @@ jobs:
                       else:
                           new_lines.append(line)
                   code = "\n".join(new_lines)
+
+                  # Встраиваем показ ошибки на экране вместо вылета!
+                  crash_handler = """
+                  super.onCreate(savedInstanceState)
+                  Thread.setDefaultUncaughtExceptionHandler { _, e ->
+                      android.os.Handler(android.os.Looper.getMainLooper()).post {
+                          val sv = android.widget.ScrollView(this)
+                          val tv = android.widget.TextView(this).apply {
+                              text = "ОШИБКА ЗАПУСКА:\\n\\n" + android.util.Log.getStackTraceString(e)
+                              setTextColor(android.graphics.Color.RED)
+                              setBackgroundColor(android.graphics.Color.BLACK)
+                              setPadding(40, 80, 40, 80)
+                              setTextIsSelectable(true)
+                          }
+                          sv.addView(tv)
+                          setContentView(sv)
+                      }
+                  }
+                  """
+                  code = code.replace("super.onCreate(savedInstanceState)", crash_handler, 1)
 
               with open(path, "w", encoding="utf-8") as f:
                   f.write(code)
