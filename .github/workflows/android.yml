@@ -25,7 +25,7 @@ jobs:
               with open(path, "r", encoding="utf-8") as f:
                   code = f.read()
 
-              # 1. Добавляем забытые импорты в каждый файл, где они нужны
+              # 1. Добавляем забытый импорт nativeCanvas
               if "nativeCanvas" in code and "import androidx.compose.ui.graphics.nativeCanvas" not in code:
                   code = re.sub(r'(package\s+[^\n]+\n)', r'\1import androidx.compose.ui.graphics.nativeCanvas\n', code, count=1)
 
@@ -33,10 +33,11 @@ jobs:
               code = code.replace("WebViewClient.ERROR_SSL_HANDSHAKE", "-11")
               code = code.replace("ERROR_SSL_HANDSHAKE", "-11")
 
-              # 3. Вырезаем проблемный PlatformImeOptions (и однострочный, и многострочный)
+              # 3. Чиним platformImeOptions (заменяем любой вызов со скобками на null)
               code = re.sub(r'import\s+.*PlatformImeOptions.*\n', '', code)
-              code = re.sub(r'platformImeOptions\s*=\s*PlatformImeOptions\([^)]*\)\s*,?', '', code)
-              code = re.sub(r'.*PlatformImeOptions.*\n', '', code)
+              code = re.sub(r'platformImeOptions\s*=\s*PlatformImeOptions\s*\([^)]*\)\s*(\{[^}]*\})?', 'platformImeOptions = null', code, flags=re.DOTALL)
+              code = re.sub(r'platformImeOptions\s*=\s*\{[^}]*\}', 'platformImeOptions = null', code, flags=re.DOTALL)
+              code = re.sub(r'platformImeOptions\s*=\s*[A-Za-z0-9_.]+\s*(\([^)]*\))?\s*(\{[^}]*\})?', 'platformImeOptions = null', code, flags=re.DOTALL)
 
               # 4. Чиним опечатку array(...) в SlickTheme.kt
               code = re.sub(r'\barray\s*\(', 'arrayOf(', code)
