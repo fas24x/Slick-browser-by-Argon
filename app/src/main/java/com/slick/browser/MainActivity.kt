@@ -137,10 +137,17 @@ class MainActivity : ComponentActivity() {
 
         Log.i("SlickCore", "/* First worked operational APK build compiled on 28.10.26 by Argon */")
 
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        //WindowCompat.setDecorFitsSystemWindows(window, false)
 
         browserState = SlickBrowserState(applicationContext)
         webViewPool = WebViewPoolManager(applicationContext, browserState)
+        // Исправление обрезки сайтов сверху и снизу
+        val rootLayout = window.decorView.findViewById<android.view.View>(android.R.id.content)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, windowInsets ->
+            val insets = windowInsets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+            windowInsets
+        }
 
         // Авто-детект системного режима энергосбережения
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
